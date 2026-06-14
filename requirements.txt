@@ -1,0 +1,7 @@
+fredapi==0.5.2
+yfinance==0.2.54
+requests==2.32.3
+python-dotenv==1.0.1
+streamlit==1.45.1
+plotly==6.1.2
+pandas==2.2.3

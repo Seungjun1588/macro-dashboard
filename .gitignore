@@ -2,8 +2,8 @@
 .env
 plan.md
 
-# DB
-db/macro.db
+# DB는 GitHub Actions가 커밋하므로 추적 대상 유지
+# db/macro.db
 
 # Python
 __pycache__/
