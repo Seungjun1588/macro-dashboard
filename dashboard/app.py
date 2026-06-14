@@ -8,8 +8,7 @@ import plotly.express as px
 import pandas as pd
 import sqlite3
 import yfinance as yf
-from datetime import datetime
-from config import DB_PATH
+from config import DB_PATH, TICKER_COLORS
 
 st.set_page_config(
     page_title="거시경제 대시보드",
@@ -17,11 +16,64 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📊 거시경제 대시보드")
-st.caption(f"마지막 갱신: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+st.markdown("""
+<style>
+.main { background-color: #0F1117; }
+
+[data-testid="metric-container"] {
+    background-color: #1A1D27;
+    border: 1px solid #2A2D3E;
+    border-radius: 12px;
+    padding: 20px 24px;
+}
+[data-testid="metric-container"] label {
+    color: #8A8FA8 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-size: 28px !important;
+    font-weight: 600 !important;
+    color: #FFFFFF !important;
+}
+
+[data-testid="stSidebar"] {
+    background-color: #13151F;
+    border-right: 1px solid #2A2D3E;
+}
+[data-testid="stSidebar"] .stRadio label {
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #8A8FA8;
+}
+[data-testid="stSidebar"] .stRadio label:hover {
+    background-color: #2A2D3E;
+    color: #FFFFFF;
+}
+
+.js-plotly-plot {
+    background-color: #1A1D27 !important;
+    border-radius: 12px;
+    border: 1px solid #2A2D3E;
+}
+
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
 
 
-# ── 데이터 로드 ──────────────────────────────────────────────────────────────
+# ── 차트 높이 상수 ─────────────────────────────────────────────────────────────
+
+CHART_HEIGHT_SM = 280
+CHART_HEIGHT_MD = 340
+CHART_HEIGHT_LG = 400
+
+
+# ── 데이터 로드 ───────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
 def load_history(ticker: str, limit: int = 365) -> pd.DataFrame:
@@ -64,7 +116,6 @@ def load_all_latest() -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_recent(ticker: str, limit: int = 14) -> pd.DataFrame:
-    """최신 N개 레코드를 ASC 정렬로 반환."""
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(
         "SELECT date, value FROM indicators WHERE ticker=? ORDER BY date DESC LIMIT ?",
@@ -77,7 +128,6 @@ def load_recent(ticker: str, limit: int = 14) -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def get_yoy_pct(ticker: str) -> float | None:
-    """월별 인덱스 지표의 YoY 변화율(%) 계산."""
     df = load_recent(ticker, 14)
     if len(df) < 13:
         return None
@@ -90,11 +140,9 @@ def get_yoy_pct(ticker: str) -> float | None:
 
 @st.cache_data(ttl=3600)
 def calc_changes(ticker: str) -> dict:
-    """1일/1주/1개월 변화율 계산. 월별 데이터는 1일/1주=0."""
     df = load_recent(ticker, 35)
     if df.empty:
         return {"1일(%)": None, "1주(%)": None, "1개월(%)": None}
-
     latest_val = df["value"].iloc[-1]
 
     def safe_pct(i: int) -> float | None:
@@ -105,20 +153,15 @@ def calc_changes(ticker: str) -> dict:
             return None
         return round((latest_val / past - 1) * 100, 2)
 
-    if len(df) >= 2:
-        gap = (df["date"].iloc[-1] - df["date"].iloc[-2]).days
-    else:
-        gap = 30
-
-    if gap <= 3:  # 일별 데이터
+    gap = (df["date"].iloc[-1] - df["date"].iloc[-2]).days if len(df) >= 2 else 30
+    if gap <= 3:
         return {"1일(%)": safe_pct(1), "1주(%)": safe_pct(5), "1개월(%)": safe_pct(22)}
-    else:  # 월별 데이터 — 1일/1주 변동 없음
+    else:
         return {"1일(%)": 0.0, "1주(%)": 0.0, "1개월(%)": safe_pct(1)}
 
 
-@st.cache_data(ttl=604800)  # 7일 캐시 — 분기 재무는 3개월에 한 번 갱신
+@st.cache_data(ttl=604800)
 def load_financials(ticker: str):
-    """yfinance 분기 재무제표 및 대차대조표. (yfinance 0.2.x 기준)"""
     try:
         stock = yf.Ticker(ticker)
         fin = stock.quarterly_income_stmt
@@ -126,6 +169,13 @@ def load_financials(ticker: str):
         return fin, bs
     except Exception:
         return None, None
+
+
+def get_last_collected() -> str:
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT MAX(collected_at) FROM indicators").fetchone()
+    conn.close()
+    return row[0][:16] if row and row[0] else "알 수 없음"
 
 
 # ── 포매팅 ───────────────────────────────────────────────────────────────────
@@ -156,7 +206,7 @@ def delta_color(ticker: str, delta: float) -> str:
 
 SIGNAL_RULES: dict = {
     "10Y2Y_SPREAD": lambda v: "🔴" if v < 0    else ("🟡" if v < 0.5  else "🟢"),
-    "CPIAUCSL":     lambda v: "🔴" if v > 4    else ("🟡" if v > 2.5  else "🟢"),  # v = YoY%
+    "CPIAUCSL":     lambda v: "🔴" if v > 4    else ("🟡" if v > 2.5  else "🟢"),
     "UNRATE":       lambda v: "🔴" if v > 5    else ("🟡" if v > 4.5  else "🟢"),
     "FEDFUNDS":     lambda v: "🟡" if v > 4    else "🟢",
     "DX-Y.NYB":     lambda v: "🟡" if v > 104  else "🟢",
@@ -175,6 +225,17 @@ def get_signal(ticker: str) -> str:
         return rule(yoy) if yoy is not None else "⚪"
     latest = load_latest(ticker)
     return rule(latest["value"]) if latest else "⚪"
+
+
+def tab_signal(tickers: list[str]) -> str:
+    signals = [get_signal(t) for t in tickers if load_latest(t)]
+    if "🔴" in signals:
+        return "🔴"
+    if "🟡" in signals:
+        return "🟡"
+    if signals:
+        return "🟢"
+    return "⚪"
 
 
 # ── 지표 설명 ─────────────────────────────────────────────────────────────────
@@ -304,11 +365,11 @@ def is_unrate_rising() -> bool:
 
 
 def get_business_cycle() -> tuple[str, int]:
-    spread_d = load_latest("10Y2Y_SPREAD")
+    spread_d  = load_latest("10Y2Y_SPREAD")
     umcsent_d = load_latest("UMCSENT")
-    spread = spread_d["value"] if spread_d else None
-    umcsent = umcsent_d["value"] if umcsent_d else None
-    cpi_yoy = get_yoy_pct("CPIAUCSL")
+    spread    = spread_d["value"]  if spread_d  else None
+    umcsent   = umcsent_d["value"] if umcsent_d else None
+    cpi_yoy   = get_yoy_pct("CPIAUCSL")
     unrate_rising = is_unrate_rising()
 
     if spread is not None and spread < 0:
@@ -326,10 +387,10 @@ def render_cycle_panel(stage: str, stage_num: int):
     cols = st.columns(4)
     for i, (s, c) in enumerate(zip(stages, colors)):
         is_current = (i + 1 == stage_num)
-        bg = c if is_current else "#f8fafc"
-        text_col = "white" if is_current else "#94a3b8"
-        border = f"2px solid {c}" if is_current else "1px solid #e2e8f0"
-        note = "<br><small>(현재)</small>" if is_current else ""
+        bg         = c if is_current else "#1A1D27"
+        text_col   = "white" if is_current else "#6B7280"
+        border     = f"2px solid {c}" if is_current else "1px solid #2A2D3E"
+        note       = "<br><small>(현재)</small>" if is_current else ""
         cols[i].markdown(
             f'<div style="background:{bg};border:{border};border-radius:8px;'
             f'padding:14px 8px;text-align:center;color:{text_col};font-weight:bold;font-size:15px">'
@@ -343,7 +404,7 @@ def render_cycle_panel(stage: str, stage_num: int):
 def get_alerts() -> list[tuple]:
     alerts = []
     spread_d = load_latest("10Y2Y_SPREAD")
-    cpi_yoy = get_yoy_pct("CPIAUCSL")
+    cpi_yoy  = get_yoy_pct("CPIAUCSL")
     krw_hist = load_recent("KRW=X", 2)
     sox_hist = load_recent("^SOX", 30)
 
@@ -364,6 +425,62 @@ def get_alerts() -> list[tuple]:
     return alerts
 
 
+# ── 다크 테마 차트 헬퍼 ───────────────────────────────────────────────────────
+
+def dark_layout(title: str = "", height: int = CHART_HEIGHT_MD) -> dict:
+    return dict(
+        title=dict(text=title, font=dict(color="#E0E0E0", size=14)),
+        height=height,
+        paper_bgcolor="#1A1D27",
+        plot_bgcolor="#1A1D27",
+        font=dict(color="#8A8FA8", size=12),
+        xaxis=dict(
+            gridcolor="#2A2D3E",
+            linecolor="#2A2D3E",
+            tickcolor="#2A2D3E",
+            tickfont=dict(color="#8A8FA8"),
+        ),
+        yaxis=dict(
+            gridcolor="#2A2D3E",
+            linecolor="#2A2D3E",
+            tickcolor="#2A2D3E",
+            tickfont=dict(color="#8A8FA8"),
+        ),
+        margin=dict(l=0, r=0, t=40, b=0),
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor="#2A2D3E", font_color="#E0E0E0"),
+        legend=dict(
+            orientation="h",
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#8A8FA8"),
+            y=-0.15,
+        ),
+    )
+
+
+def dark_yaxis2(title: str = "") -> dict:
+    return dict(
+        title=title, overlaying="y", side="right", showgrid=False,
+        linecolor="#2A2D3E", tickcolor="#2A2D3E",
+        tickfont=dict(color="#8A8FA8"),
+    )
+
+
+# ── 페이지 헤더 ───────────────────────────────────────────────────────────────
+
+def page_header(title: str, subtitle: str):
+    st.markdown(f"""
+    <div style="margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+            <h1 style="margin: 0; font-size: 28px; font-weight: 600; color: #FFFFFF;">{title}</h1>
+            <span style="background-color:#1E3A5F;color:#4A9EFF;padding:2px 10px;
+                border-radius:20px;font-size:12px;font-weight:500;">Live Data</span>
+        </div>
+        <p style="margin: 0; color: #8A8FA8; font-size: 14px;">{subtitle}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 # ── UI 헬퍼 ──────────────────────────────────────────────────────────────────
 
 def kpi_card(col, ticker: str, label: str, unit: str):
@@ -371,7 +488,7 @@ def kpi_card(col, ticker: str, label: str, unit: str):
     if latest is None:
         col.metric(label, "데이터 없음")
         return
-    hist = load_recent(ticker, 2)
+    hist  = load_recent(ticker, 2)
     delta = None
     if len(hist) >= 2:
         delta = round(hist["value"].iloc[-1] - hist["value"].iloc[-2], 4)
@@ -398,34 +515,39 @@ def period_slider(key: str) -> int:
 def line_chart(ticker: str, title: str, unit: str, limit: int = 365) -> go.Figure:
     df = load_history(ticker, limit=limit)
     fig = go.Figure()
-    if not df.empty:
-        fig.add_trace(go.Scatter(x=df["date"], y=df["value"], mode="lines", name=title, line=dict(width=2)))
-    fig.update_layout(
-        title=title, xaxis_title="날짜", yaxis_title=unit,
-        height=300, margin=dict(l=0, r=0, t=40, b=0), hovermode="x unified",
-    )
+    if df.empty:
+        return fig
+    fig.add_trace(go.Scatter(
+        x=df["date"], y=df["value"], mode="lines", name=title,
+        line=dict(width=2, color=TICKER_COLORS.get(ticker, "#4A9EFF")),
+    ))
+    layout = dark_layout(title, CHART_HEIGHT_MD)
+    layout["yaxis"]["title"] = unit
+    fig.update_layout(**layout)
     return fig
 
 
 def mini_chart(ticker: str, title: str, limit: int = 180) -> go.Figure:
     df = load_history(ticker, limit=limit)
     fig = go.Figure()
-    if not df.empty:
-        fig.add_trace(go.Scatter(x=df["date"], y=df["value"], mode="lines", name=title, line=dict(width=1.5)))
-    fig.update_layout(
-        title=title, height=200,
-        margin=dict(l=0, r=0, t=30, b=0),
-        hovermode="x unified",
-        xaxis=dict(showticklabels=False),
-    )
+    if df.empty:
+        return fig
+    fig.add_trace(go.Scatter(
+        x=df["date"], y=df["value"], mode="lines", name=title,
+        line=dict(width=1.5, color=TICKER_COLORS.get(ticker, "#4A9EFF")),
+    ))
+    layout = dark_layout(title, 200)
+    layout["xaxis"]["showticklabels"] = False
+    layout["margin"] = dict(l=0, r=0, t=30, b=0)
+    fig.update_layout(**layout)
     return fig
 
 
 def show_situation_messages(tab: str):
     spread_d = load_latest("10Y2Y_SPREAD")
-    dxy_d = load_latest("DX-Y.NYB")
-    krw_d = load_latest("KRW=X")
-    cpi_yoy = get_yoy_pct("CPIAUCSL")
+    dxy_d    = load_latest("DX-Y.NYB")
+    krw_d    = load_latest("KRW=X")
+    cpi_yoy  = get_yoy_pct("CPIAUCSL")
 
     if tab == "global":
         if spread_d and spread_d["value"] < 0:
@@ -465,21 +587,11 @@ ALL_TICKERS = [
 ]
 
 
-# ── 탭 구성 ──────────────────────────────────────────────────────────────────
+# ── 페이지 함수 ───────────────────────────────────────────────────────────────
 
-tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🔭 Overview",
-    "🌐 글로벌 금융",
-    "📈 인플레이션/경기",
-    "🇰🇷 한국/원자재",
-    "💻 반도체/주식",
-    "📋 실적 트래커",
-])
+def show_overview():
+    page_header("Overview", "Key macroeconomic indicators and market data")
 
-
-# ── Tab 0: Overview ───────────────────────────────────────────────────────────
-with tab0:
-    # 섹션 1: 경기 사이클 패널
     st.subheader("경기 사이클")
     stage, stage_num = get_business_cycle()
     render_cycle_panel(stage, stage_num)
@@ -487,17 +599,16 @@ with tab0:
 
     st.divider()
 
-    # 섹션 2: 신호등 요약판
     st.subheader("핵심 지표 신호등")
     signal_tickers = [
         ("10Y2Y_SPREAD", "장단기 금리차"),
-        ("CPIAUCSL", "미국 CPI(YoY)"),
-        ("UNRATE", "실업률"),
-        ("FEDFUNDS", "미국 기준금리"),
-        ("DX-Y.NYB", "달러 인덱스"),
-        ("KRW=X", "원/달러 환율"),
-        ("CL=F", "WTI 유가"),
-        ("^KS11", "코스피"),
+        ("CPIAUCSL",     "미국 CPI(YoY)"),
+        ("UNRATE",       "실업률"),
+        ("FEDFUNDS",     "미국 기준금리"),
+        ("DX-Y.NYB",     "달러 인덱스"),
+        ("KRW=X",        "원/달러 환율"),
+        ("CL=F",         "WTI 유가"),
+        ("^KS11",        "코스피"),
     ]
     sig_cols = st.columns(4)
     for i, (ticker, label) in enumerate(signal_tickers):
@@ -520,22 +631,19 @@ with tab0:
 
     st.divider()
 
-    # 섹션 3: 조건부 알림 배너
     alerts = get_alerts()
     if alerts:
         st.subheader("알림")
         for alert_type, msg, _ in alerts:
             getattr(st, alert_type)(msg)
+        st.divider()
 
-    st.divider()
-
-    # 섹션 4: 미니 차트 3개
     st.subheader("주요 차트")
     alert_tickers = [t for _, _, t in alerts]
     default_charts = [
         ("10Y2Y_SPREAD", "장단기 금리차"),
-        ("^SOX", "SOX 반도체지수"),
-        ("KRW=X", "원/달러 환율"),
+        ("^SOX",         "SOX 반도체지수"),
+        ("KRW=X",        "원/달러 환율"),
     ]
     chart_targets = []
     seen = set()
@@ -548,13 +656,12 @@ with tab0:
                     break
         if len(chart_targets) >= 3:
             break
-    if len(chart_targets) < 3:
-        for ticker, label in default_charts:
-            if ticker not in seen:
-                chart_targets.append((ticker, label))
-                seen.add(ticker)
-            if len(chart_targets) >= 3:
-                break
+    for ticker, label in default_charts:
+        if ticker not in seen:
+            chart_targets.append((ticker, label))
+            seen.add(ticker)
+        if len(chart_targets) >= 3:
+            break
 
     mc1, mc2, mc3 = st.columns(3)
     for col, (ticker, label) in zip([mc1, mc2, mc3], chart_targets[:3]):
@@ -562,18 +669,18 @@ with tab0:
 
     st.divider()
 
-    # 섹션 5: 전체 지표 변화율 히트맵
     st.subheader("전체 지표 변화율 히트맵")
-    heat_rows = []
-    for ticker, label in ALL_TICKERS:
-        chg = calc_changes(ticker)
-        heat_rows.append({
-            "지표": label,
-            "1일(%)": chg["1일(%)"],
-            "1주(%)": chg["1주(%)"],
-            "1개월(%)": chg["1개월(%)"],
-        })
-    heat_df = pd.DataFrame(heat_rows).set_index("지표").fillna(0)
+    with st.spinner("히트맵 계산 중..."):
+        heat_rows = []
+        for ticker, label in ALL_TICKERS:
+            chg = calc_changes(ticker)
+            heat_rows.append({
+                "지표": label,
+                "1일(%)": chg["1일(%)"],
+                "1주(%)": chg["1주(%)"],
+                "1개월(%)": chg["1개월(%)"],
+            })
+        heat_df = pd.DataFrame(heat_rows).set_index("지표").fillna(0)
     fig_heat = px.imshow(
         heat_df,
         color_continuous_scale="RdYlGn",
@@ -581,186 +688,250 @@ with tab0:
         text_auto=".2f",
         aspect="auto",
     )
-    fig_heat.update_layout(height=550, margin=dict(l=0, r=0, t=20, b=0))
+    fig_heat.update_layout(
+        height=550,
+        paper_bgcolor="#1A1D27",
+        plot_bgcolor="#1A1D27",
+        font=dict(color="#E0E0E0"),
+        margin=dict(l=0, r=0, t=20, b=0),
+    )
     st.plotly_chart(fig_heat, use_container_width=True)
 
 
-# ── Tab 1: 글로벌 금융 ────────────────────────────────────────────────────────
-with tab1:
-    st.subheader("글로벌 금융 환경")
-    period1 = period_slider("period1")
+def show_markets():
+    page_header("Markets", "미국 국채 금리 · 장단기 스프레드 · 달러 인덱스")
+    period = period_slider("period_markets")
     show_situation_messages("global")
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    kpi_card(c1, "FEDFUNDS", "미국 기준금리", "%")
-    kpi_card(c2, "GS10", "10년물 국채", "%")
-    kpi_card(c3, "GS2", "2년물 국채", "%")
-    kpi_card(c4, "10Y2Y_SPREAD", "장단기 금리차", "%")
-    kpi_card(c5, "DX-Y.NYB", "달러 인덱스", "index")
+    kpi_card(c1, "FEDFUNDS",      "미국 기준금리", "%")
+    kpi_card(c2, "GS10",          "10년물 국채",   "%")
+    kpi_card(c3, "GS2",           "2년물 국채",    "%")
+    kpi_card(c4, "10Y2Y_SPREAD",  "장단기 금리차", "%")
+    kpi_card(c5, "DX-Y.NYB",      "달러 인덱스",   "index")
 
     st.divider()
 
     col_l, col_r = st.columns(2)
     with col_l:
-        df_ff   = load_history("FEDFUNDS", period1)
-        df_gs10 = load_history("GS10", period1)
-        df_gs2  = load_history("GS2", period1)
-        df_sp   = load_history("10Y2Y_SPREAD", period1)
+        df_ff  = load_history("FEDFUNDS",     period)
+        df_gs10= load_history("GS10",         period)
+        df_gs2 = load_history("GS2",          period)
+        df_sp  = load_history("10Y2Y_SPREAD", period)
         fig = go.Figure()
-        for df, name, color in [
-            (df_ff,   "기준금리",    "crimson"),
-            (df_gs10, "10년물",      "royalblue"),
-            (df_gs2,  "2년물",       "orange"),
-            (df_sp,   "장단기 금리차", "green"),
+        for df, ticker, name in [
+            (df_ff,   "FEDFUNDS",     "기준금리"),
+            (df_gs10, "GS10",         "10년물"),
+            (df_gs2,  "GS2",          "2년물"),
+            (df_sp,   "10Y2Y_SPREAD", "장단기 금리차"),
         ]:
             if not df.empty:
-                fig.add_trace(go.Scatter(x=df["date"], y=df["value"], name=name, line=dict(color=color)))
-        fig.add_hline(y=0, line_dash="dash", line_color="red", opacity=0.5)
-        fig.update_layout(title="미국 국채 금리 추이", height=320, margin=dict(l=0, r=0, t=40, b=0), hovermode="x unified")
+                fig.add_trace(go.Scatter(
+                    x=df["date"], y=df["value"], name=name,
+                    line=dict(color=TICKER_COLORS.get(ticker, "#4A9EFF")),
+                ))
+        fig.add_hline(y=0, line_dash="dash", line_color="#ef4444", opacity=0.5)
+        fig.update_layout(**dark_layout("미국 국채 금리 추이", CHART_HEIGHT_MD))
         st.plotly_chart(fig, use_container_width=True)
 
     with col_r:
-        st.plotly_chart(line_chart("DX-Y.NYB", "달러 인덱스 (DXY)", "index", limit=period1), use_container_width=True)
+        if load_history("DX-Y.NYB", period).empty:
+            st.info("📡 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
+        else:
+            st.plotly_chart(line_chart("DX-Y.NYB", "달러 인덱스 (DXY)", "index", limit=period), use_container_width=True)
 
 
-# ── Tab 2: 인플레이션/경기 ────────────────────────────────────────────────────
-with tab2:
-    st.subheader("인플레이션 & 경기")
-    period2 = period_slider("period2")
+def show_macro():
+    page_header("Macro Economy", "인플레이션 · 고용 · 소비자심리")
+    period = period_slider("period_macro")
     show_situation_messages("inflation")
 
     c1, c2, c3, c4 = st.columns(4)
-    kpi_card(c1, "CPIAUCSL", "미국 CPI", "index")
-    kpi_card(c2, "PCEPI", "미국 PCE", "index")
-    kpi_card(c3, "UNRATE", "실업률", "%")
-    kpi_card(c4, "UMCSENT", "소비자심리(미시건)", "index")
+    kpi_card(c1, "CPIAUCSL", "미국 CPI",          "index")
+    kpi_card(c2, "PCEPI",    "미국 PCE",          "index")
+    kpi_card(c3, "UNRATE",   "실업률",             "%")
+    kpi_card(c4, "UMCSENT",  "소비자심리(미시건)", "index")
 
     st.divider()
 
     col_l, col_r = st.columns(2)
     with col_l:
-        df_cpi = load_history("CPIAUCSL", period2)
-        df_pce = load_history("PCEPI", period2)
+        df_cpi = load_history("CPIAUCSL", period)
+        df_pce = load_history("PCEPI",    period)
         fig = go.Figure()
         if not df_cpi.empty:
-            fig.add_trace(go.Scatter(x=df_cpi["date"], y=df_cpi["value"], name="CPI (좌)", line=dict(color="royalblue")))
+            fig.add_trace(go.Scatter(
+                x=df_cpi["date"], y=df_cpi["value"], name="CPI (좌)",
+                line=dict(color=TICKER_COLORS.get("CPIAUCSL", "#4A9EFF")),
+            ))
         if not df_pce.empty:
-            fig.add_trace(go.Scatter(x=df_pce["date"], y=df_pce["value"], name="PCE (우)", line=dict(color="tomato"), yaxis="y2"))
-        fig.update_layout(
-            title="CPI / PCE 추이", height=300, margin=dict(l=0, r=50, t=40, b=0), hovermode="x unified",
-            yaxis=dict(title="CPI", side="left"),
-            yaxis2=dict(title="PCE", overlaying="y", side="right", showgrid=False),
-            legend=dict(orientation="h"),
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            fig.add_trace(go.Scatter(
+                x=df_pce["date"], y=df_pce["value"], name="PCE (우)",
+                line=dict(color=TICKER_COLORS.get("PCEPI", "#E63946")), yaxis="y2",
+            ))
+        if df_cpi.empty and df_pce.empty:
+            st.info("📡 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
+        else:
+            layout = dark_layout("CPI / PCE 추이", CHART_HEIGHT_MD)
+            layout["yaxis"]["title"]  = "CPI"
+            layout["yaxis2"]          = dark_yaxis2("PCE")
+            layout["margin"]          = dict(l=0, r=50, t=40, b=0)
+            fig.update_layout(**layout)
+            st.plotly_chart(fig, use_container_width=True)
 
     with col_r:
         col_l2, col_r2 = st.columns(2)
         with col_l2:
-            st.plotly_chart(line_chart("UNRATE", "실업률 (%)", "%", limit=period2), use_container_width=True)
+            if load_history("UNRATE", period).empty:
+                st.info("📡 UNRATE 데이터 없음")
+            else:
+                st.plotly_chart(line_chart("UNRATE", "실업률 (%)", "%", limit=period), use_container_width=True)
         with col_r2:
-            st.plotly_chart(line_chart("UMCSENT", "소비자심리지수", "index", limit=period2), use_container_width=True)
+            if load_history("UMCSENT", period).empty:
+                st.info("📡 UMCSENT 데이터 없음")
+            else:
+                st.plotly_chart(line_chart("UMCSENT", "소비자심리지수", "index", limit=period), use_container_width=True)
 
 
-# ── Tab 3: 한국/원자재 ────────────────────────────────────────────────────────
-with tab3:
-    st.subheader("한국 경제 & 원자재")
-    period3 = period_slider("period3")
+def show_korea():
+    page_header("한국·원자재", "원화 · 유가 · 금 · 수출 지표")
+    period = period_slider("period_korea")
     show_situation_messages("korea")
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    kpi_card(c1, "KRW=X", "원/달러 환율", "KRW")
+    c1, c2, c3 = st.columns(3)
+    kpi_card(c1, "KRW=X",   "원/달러 환율", "KRW")
     kpi_card(c2, "722Y001", "한국 기준금리", "%")
-    kpi_card(c3, "901Y009", "한국 CPI", "index")
+    kpi_card(c3, "901Y009", "한국 CPI",     "index")
+
+    c4, c5, c6 = st.columns(3)
     kpi_card(c4, "403Y001", "수출금액지수", "index")
-    kpi_card(c5, "CL=F", "WTI 유가", "USD")
-    kpi_card(c6, "GC=F", "금 가격", "USD")
+    kpi_card(c5, "CL=F",    "WTI 유가",    "USD")
+    kpi_card(c6, "GC=F",    "금 가격",     "USD")
 
     st.divider()
 
     col_l, col_r = st.columns(2)
     with col_l:
-        st.plotly_chart(line_chart("KRW=X", "원/달러 환율", "KRW", limit=period3), use_container_width=True)
-        st.plotly_chart(line_chart("403Y001", "한국 수출금액지수", "index", limit=min(period3, 60)), use_container_width=True)
+        st.plotly_chart(line_chart("KRW=X", "원/달러 환율", "KRW", limit=period), use_container_width=True)
+        st.plotly_chart(
+            line_chart("403Y001", "한국 수출금액지수", "index", limit=min(period, 60)),
+            use_container_width=True,
+        )
+
     with col_r:
-        df_oil  = load_history("CL=F", period3)
-        df_gold = load_history("GC=F", period3)
+        df_oil  = load_history("CL=F", period)
+        df_gold = load_history("GC=F", period)
         fig = go.Figure()
         if not df_oil.empty:
-            fig.add_trace(go.Scatter(x=df_oil["date"], y=df_oil["value"], name="WTI (좌, USD)", line=dict(color="orange")))
+            fig.add_trace(go.Scatter(
+                x=df_oil["date"], y=df_oil["value"], name="WTI (좌, USD)",
+                line=dict(color=TICKER_COLORS.get("CL=F", "#F4A261")),
+            ))
         if not df_gold.empty:
-            fig.add_trace(go.Scatter(x=df_gold["date"], y=df_gold["value"], name="금 (우, USD)", line=dict(color="goldenrod"), yaxis="y2"))
-        fig.update_layout(
-            title="원자재 가격 추이", height=300, margin=dict(l=0, r=50, t=40, b=0), hovermode="x unified",
-            yaxis=dict(title="WTI (USD)", side="left"),
-            yaxis2=dict(title="금 (USD)", overlaying="y", side="right", showgrid=False),
-            legend=dict(orientation="h"),
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            fig.add_trace(go.Scatter(
+                x=df_gold["date"], y=df_gold["value"], name="금 (우, USD)",
+                line=dict(color=TICKER_COLORS.get("GC=F", "#FFD700")), yaxis="y2",
+            ))
+        if df_oil.empty and df_gold.empty:
+            st.info("📡 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
+        else:
+            layout = dark_layout("원자재 가격 추이", CHART_HEIGHT_MD)
+            layout["yaxis"]["title"] = "WTI (USD)"
+            layout["yaxis2"]         = dark_yaxis2("금 (USD)")
+            layout["margin"]         = dict(l=0, r=50, t=40, b=0)
+            fig.update_layout(**layout)
+            st.plotly_chart(fig, use_container_width=True)
 
-        df_krbo  = load_history("722Y001", min(period3, 60))
-        df_krcpi = load_history("901Y009", min(period3, 60))
+        df_krbo  = load_history("722Y001", min(period, 60))
+        df_krcpi = load_history("901Y009", min(period, 60))
         fig2 = go.Figure()
         if not df_krbo.empty:
-            fig2.add_trace(go.Scatter(x=df_krbo["date"], y=df_krbo["value"], name="기준금리 (좌, %)", line=dict(color="steelblue")))
+            fig2.add_trace(go.Scatter(
+                x=df_krbo["date"], y=df_krbo["value"], name="기준금리 (좌, %)",
+                line=dict(color=TICKER_COLORS.get("722Y001", "#457B9D")),
+            ))
         if not df_krcpi.empty:
-            fig2.add_trace(go.Scatter(x=df_krcpi["date"], y=df_krcpi["value"], name="CPI (우, index)", line=dict(color="coral"), yaxis="y2"))
-        fig2.update_layout(
-            title="한국 금리 & CPI", height=300, margin=dict(l=0, r=50, t=40, b=0), hovermode="x unified",
-            yaxis=dict(title="금리 (%)", side="left"),
-            yaxis2=dict(title="CPI (index)", overlaying="y", side="right", showgrid=False),
-            legend=dict(orientation="h"),
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+            fig2.add_trace(go.Scatter(
+                x=df_krcpi["date"], y=df_krcpi["value"], name="CPI (우, index)",
+                line=dict(color=TICKER_COLORS.get("901Y009", "#E76F51")), yaxis="y2",
+            ))
+        if df_krbo.empty and df_krcpi.empty:
+            st.info("📡 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
+        else:
+            layout2 = dark_layout("한국 금리 & CPI", CHART_HEIGHT_MD)
+            layout2["yaxis"]["title"] = "금리 (%)"
+            layout2["yaxis2"]         = dark_yaxis2("CPI (index)")
+            layout2["margin"]         = dict(l=0, r=50, t=40, b=0)
+            fig2.update_layout(**layout2)
+            st.plotly_chart(fig2, use_container_width=True)
 
 
-# ── Tab 4: 반도체/주식 ────────────────────────────────────────────────────────
-with tab4:
-    st.subheader("반도체 & 주식시장")
-    period4 = period_slider("period4")
+def show_semiconductor():
+    page_header("반도체·주식", "반도체 업황 및 주요 종목")
+    period = period_slider("period_semi")
     show_situation_messages("semicon")
 
     c1, c2, c3, c4 = st.columns(4)
-    kpi_card(c1, "^SOX", "필라델피아 반도체", "index")
-    kpi_card(c2, "NVDA", "엔비디아", "USD")
-    kpi_card(c3, "005930.KS", "삼성전자", "KRW")
-    kpi_card(c4, "000660.KS", "SK하이닉스", "KRW")
+    kpi_card(c1, "^SOX",       "필라델피아 반도체", "index")
+    kpi_card(c2, "NVDA",       "엔비디아",          "USD")
+    kpi_card(c3, "005930.KS",  "삼성전자",          "KRW")
+    kpi_card(c4, "000660.KS",  "SK하이닉스",        "KRW")
 
     c5, c6, c7, c8 = st.columns(4)
     kpi_card(c5, "^GSPC", "S&P 500", "index")
-    kpi_card(c6, "^IXIC", "나스닥", "index")
-    kpi_card(c7, "^KS11", "코스피", "index")
-    kpi_card(c8, "^KQ11", "코스닥", "index")
+    kpi_card(c6, "^IXIC", "나스닥",  "index")
+    kpi_card(c7, "^KS11", "코스피",  "index")
+    kpi_card(c8, "^KQ11", "코스닥",  "index")
 
     st.divider()
 
     col_l, col_r = st.columns(2)
     with col_l:
-        semi_tickers = [("^SOX", "SOX"), ("NVDA", "NVDA"), ("005930.KS", "삼성전자"), ("000660.KS", "SK하이닉스")]
+        semi_tickers = [
+            ("^SOX",       "SOX"),
+            ("NVDA",       "NVDA"),
+            ("005930.KS",  "삼성전자"),
+            ("000660.KS",  "SK하이닉스"),
+        ]
         fig = go.Figure()
         for ticker, label in semi_tickers:
-            df = load_history(ticker, period4)
+            df = load_history(ticker, period)
             if df.empty:
                 continue
             base = df["value"].iloc[0]
             df = df.copy()
             df["norm"] = (df["value"] / base - 1) * 100
-            fig.add_trace(go.Scatter(x=df["date"], y=df["norm"], name=label))
-        fig.update_layout(title="반도체 관련주 수익률 비교 (%)", height=350, margin=dict(l=0, r=0, t=40, b=0), hovermode="x unified", yaxis_ticksuffix="%")
+            fig.add_trace(go.Scatter(
+                x=df["date"], y=df["norm"], name=label,
+                line=dict(color=TICKER_COLORS.get(ticker, "#4A9EFF")),
+            ))
+        layout = dark_layout("반도체 관련주 수익률 비교 (%)", CHART_HEIGHT_LG)
+        layout["yaxis"]["ticksuffix"] = "%"
+        fig.update_layout(**layout)
         st.plotly_chart(fig, use_container_width=True)
 
     with col_r:
-        idx_tickers = [("^GSPC", "S&P500"), ("^IXIC", "나스닥"), ("^KS11", "코스피"), ("^KQ11", "코스닥")]
+        idx_tickers = [
+            ("^GSPC", "S&P500"),
+            ("^IXIC", "나스닥"),
+            ("^KS11", "코스피"),
+            ("^KQ11", "코스닥"),
+        ]
         fig2 = go.Figure()
         for ticker, label in idx_tickers:
-            df = load_history(ticker, period4)
+            df = load_history(ticker, period)
             if df.empty:
                 continue
             base = df["value"].iloc[0]
             df = df.copy()
             df["norm"] = (df["value"] / base - 1) * 100
-            fig2.add_trace(go.Scatter(x=df["date"], y=df["norm"], name=label))
-        fig2.update_layout(title="글로벌 지수 수익률 비교 (%)", height=350, margin=dict(l=0, r=0, t=40, b=0), hovermode="x unified", yaxis_ticksuffix="%")
+            fig2.add_trace(go.Scatter(
+                x=df["date"], y=df["norm"], name=label,
+                line=dict(color=TICKER_COLORS.get(ticker, "#4A9EFF")),
+            ))
+        layout2 = dark_layout("글로벌 지수 수익률 비교 (%)", CHART_HEIGHT_LG)
+        layout2["yaxis"]["ticksuffix"] = "%"
+        fig2.update_layout(**layout2)
         st.plotly_chart(fig2, use_container_width=True)
 
     st.divider()
@@ -774,27 +945,37 @@ with tab4:
         if len(df) < 2:
             continue
         latest_row = latest_df[latest_df["ticker"] == ticker]
-        name = latest_row["name"].values[0] if not latest_row.empty else ticker
-        chg_1d = (df["value"].iloc[-1] / df["value"].iloc[-2] - 1) * 100 if len(df) >= 2 else 0
-        chg_5d = (df["value"].iloc[-1] / df["value"].iloc[-5] - 1) * 100 if len(df) >= 5 else 0
+        name   = latest_row["name"].values[0] if not latest_row.empty else ticker
+        chg_1d = (df["value"].iloc[-1] / df["value"].iloc[-2] - 1) * 100 if len(df) >= 2  else 0
+        chg_5d = (df["value"].iloc[-1] / df["value"].iloc[-5] - 1) * 100 if len(df) >= 5  else 0
         chg_1m = (df["value"].iloc[-1] / df["value"].iloc[0]  - 1) * 100 if len(df) >= 20 else 0
         heat_data.append({"종목": name, "1일(%)": round(chg_1d, 2), "5일(%)": round(chg_5d, 2), "1개월(%)": round(chg_1m, 2)})
     if heat_data:
         heat_df4 = pd.DataFrame(heat_data).set_index("종목")
-        fig_h = px.imshow(heat_df4, color_continuous_scale="RdYlGn", color_continuous_midpoint=0, text_auto=True, aspect="auto")
-        fig_h.update_layout(height=300, margin=dict(l=0, r=0, t=20, b=0))
+        fig_h = px.imshow(
+            heat_df4, color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
+            text_auto=True, aspect="auto",
+        )
+        fig_h.update_layout(
+            height=300,
+            paper_bgcolor="#1A1D27",
+            plot_bgcolor="#1A1D27",
+            font=dict(color="#E0E0E0"),
+            margin=dict(l=0, r=0, t=20, b=0),
+        )
         st.plotly_chart(fig_h, use_container_width=True)
+    else:
+        st.info("📡 주식 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
 
 
-# ── Tab 5: 실적 트래커 ────────────────────────────────────────────────────────
-with tab5:
-    st.subheader("분기 실적 트래커")
+def show_earnings():
+    page_header("실적 트래커", "삼성전자 · SK하이닉스 · 엔비디아 분기 실적")
     st.caption("yfinance 분기 재무제표 기준. 데이터 지연 또는 누락이 있을 수 있습니다.")
 
     EARN_TICKERS = {"삼성전자": "005930.KS", "SK하이닉스": "000660.KS", "엔비디아": "NVDA"}
     selected = st.selectbox("종목 선택", list(EARN_TICKERS.keys()), key="earn_select")
     ticker_e = EARN_TICKERS[selected]
-    is_krw = ticker_e.endswith(".KS")
+    is_krw   = ticker_e.endswith(".KS")
 
     with st.spinner("재무 데이터 로딩 중..."):
         fin, bs = load_financials(ticker_e)
@@ -808,98 +989,130 @@ with tab5:
         return None
 
     if fin is None or fin.empty:
-        st.warning("재무 데이터를 가져올 수 없습니다.")
-    else:
-        fin_t = fin.T.sort_index()
-        bs_t  = bs.T.sort_index() if bs is not None and not bs.empty else pd.DataFrame()
+        st.info("📡 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
+        return
 
-        scale = 1e12 if is_krw else 1e9
-        unit_label = "조원" if is_krw else "십억 USD"
+    bs_t       = bs.T.sort_index() if bs is not None and not bs.empty else pd.DataFrame()
+    scale      = 1e12 if is_krw else 1e9
+    unit_label = "조원" if is_krw else "십억 USD"
 
-        # 매출 및 영업이익
-        rev_keys  = ["Total Revenue", "Revenue"]
-        op_keys   = ["Operating Income", "EBIT", "Operating Profit"]
-        inv_keys  = ["Inventory"]
+    rev_series = get_row(fin, "Total Revenue", "Revenue")
+    op_series  = get_row(fin, "Operating Income", "EBIT", "Operating Profit")
+    inv_series = get_row(bs, "Inventory") if not bs_t.empty else None
 
-        rev_series = get_row(fin, *rev_keys)
-        op_series  = get_row(fin, *op_keys)
-        inv_series = get_row(bs, *inv_keys) if not bs_t.empty else None
+    col_l, col_r = st.columns(2)
 
-        col_l, col_r = st.columns(2)
+    with col_l:
+        if rev_series is not None:
+            rev_df   = rev_series.dropna().sort_index()
+            quarters = [str(d)[:10] for d in rev_df.index]
+            vals     = rev_df.values / scale
 
-        with col_l:
-            if rev_series is not None:
-                rev_df = rev_series.dropna().sort_index()
-                quarters = [str(d)[:10] for d in rev_df.index]
-                vals = rev_df.values / scale
-
-                fig_rev = go.Figure()
-                fig_rev.add_trace(go.Bar(x=quarters, y=vals, name="매출", marker_color="steelblue"))
-
-                # YoY 변화율 (4분기 전 대비)
-                if len(vals) >= 5:
-                    yoy_rates = [(vals[i] / vals[i - 4] - 1) * 100 for i in range(4, len(vals))]
-                    fig_rev.add_trace(go.Scatter(
-                        x=quarters[4:], y=yoy_rates,
-                        name="YoY(%)", mode="lines+markers",
-                        line=dict(color="tomato"), yaxis="y2",
-                    ))
-                    fig_rev.update_layout(yaxis2=dict(title="YoY(%)", overlaying="y", side="right", showgrid=False))
-
-                fig_rev.update_layout(
-                    title=f"{selected} 분기 매출 ({unit_label})",
-                    height=320, margin=dict(l=0, r=50, t=40, b=0),
-                    yaxis_title=unit_label, legend=dict(orientation="h"),
-                )
-                st.plotly_chart(fig_rev, use_container_width=True)
-            else:
-                st.info("매출 데이터 없음")
-
-        with col_r:
-            if op_series is not None:
-                op_df = op_series.dropna().sort_index()
-                quarters = [str(d)[:10] for d in op_df.index]
-                vals_op = op_df.values / scale
-
-                fig_op = go.Figure()
-                colors_op = ["#22c55e" if v >= 0 else "#ef4444" for v in vals_op]
-                fig_op.add_trace(go.Bar(x=quarters, y=vals_op, name="영업이익", marker_color=colors_op))
-
-                # 영업이익률
-                if rev_series is not None:
-                    rev_df2 = rev_series.dropna().sort_index()
-                    common_idx = op_df.index.intersection(rev_df2.index)
-                    if len(common_idx) > 0:
-                        margins = (op_df.loc[common_idx] / rev_df2.loc[common_idx] * 100).values
-                        fig_op.add_trace(go.Scatter(
-                            x=[str(d)[:10] for d in common_idx],
-                            y=margins,
-                            name="영업이익률(%)", mode="lines+markers",
-                            line=dict(color="orange"), yaxis="y2",
-                        ))
-                        fig_op.update_layout(yaxis2=dict(title="영업이익률(%)", overlaying="y", side="right", showgrid=False))
-
-                fig_op.update_layout(
-                    title=f"{selected} 분기 영업이익 ({unit_label})",
-                    height=320, margin=dict(l=0, r=50, t=40, b=0),
-                    yaxis_title=unit_label, legend=dict(orientation="h"),
-                )
-                st.plotly_chart(fig_op, use_container_width=True)
-            else:
-                st.info("영업이익 데이터 없음")
-
-        # 재고 수준
-        if inv_series is not None:
-            inv_df = inv_series.dropna().sort_index()
-            quarters_inv = [str(d)[:10] for d in inv_df.index]
-            vals_inv = inv_df.values / scale
-            fig_inv = go.Figure()
-            fig_inv.add_trace(go.Bar(x=quarters_inv, y=vals_inv, name="재고", marker_color="mediumpurple"))
-            fig_inv.update_layout(
-                title=f"{selected} 분기 재고 수준 ({unit_label})",
-                height=280, margin=dict(l=0, r=0, t=40, b=0),
-                yaxis_title=unit_label,
-            )
-            st.plotly_chart(fig_inv, use_container_width=True)
+            fig_rev = go.Figure()
+            fig_rev.add_trace(go.Bar(
+                x=quarters, y=vals, name="매출",
+                marker_color=TICKER_COLORS.get(ticker_e, "#4A9EFF"),
+            ))
+            if len(vals) >= 5:
+                yoy_rates = [(vals[i] / vals[i - 4] - 1) * 100 for i in range(4, len(vals))]
+                fig_rev.add_trace(go.Scatter(
+                    x=quarters[4:], y=yoy_rates,
+                    name="YoY(%)", mode="lines+markers",
+                    line=dict(color="#E63946"), yaxis="y2",
+                ))
+            layout_rev = dark_layout(f"{selected} 분기 매출 ({unit_label})", CHART_HEIGHT_MD)
+            layout_rev["yaxis"]["title"] = unit_label
+            layout_rev["yaxis2"]         = dark_yaxis2("YoY(%)")
+            layout_rev["margin"]         = dict(l=0, r=50, t=40, b=0)
+            fig_rev.update_layout(**layout_rev)
+            st.plotly_chart(fig_rev, use_container_width=True)
         else:
-            st.info("재고 데이터 없음")
+            st.info("매출 데이터 없음")
+
+    with col_r:
+        if op_series is not None:
+            op_df    = op_series.dropna().sort_index()
+            quarters = [str(d)[:10] for d in op_df.index]
+            vals_op  = op_df.values / scale
+
+            fig_op = go.Figure()
+            colors_op = ["#22c55e" if v >= 0 else "#ef4444" for v in vals_op]
+            fig_op.add_trace(go.Bar(x=quarters, y=vals_op, name="영업이익", marker_color=colors_op))
+
+            if rev_series is not None:
+                rev_df2    = rev_series.dropna().sort_index()
+                common_idx = op_df.index.intersection(rev_df2.index)
+                if len(common_idx) > 0:
+                    margins = (op_df.loc[common_idx] / rev_df2.loc[common_idx] * 100).values
+                    fig_op.add_trace(go.Scatter(
+                        x=[str(d)[:10] for d in common_idx],
+                        y=margins,
+                        name="영업이익률(%)", mode="lines+markers",
+                        line=dict(color="#F4A261"), yaxis="y2",
+                    ))
+            layout_op = dark_layout(f"{selected} 분기 영업이익 ({unit_label})", CHART_HEIGHT_MD)
+            layout_op["yaxis"]["title"] = unit_label
+            layout_op["yaxis2"]         = dark_yaxis2("영업이익률(%)")
+            layout_op["margin"]         = dict(l=0, r=50, t=40, b=0)
+            fig_op.update_layout(**layout_op)
+            st.plotly_chart(fig_op, use_container_width=True)
+        else:
+            st.info("영업이익 데이터 없음")
+
+    if inv_series is not None:
+        inv_df       = inv_series.dropna().sort_index()
+        quarters_inv = [str(d)[:10] for d in inv_df.index]
+        vals_inv     = inv_df.values / scale
+        fig_inv = go.Figure()
+        fig_inv.add_trace(go.Bar(x=quarters_inv, y=vals_inv, name="재고", marker_color="#6A4C93"))
+        layout_inv = dark_layout(f"{selected} 분기 재고 수준 ({unit_label})", CHART_HEIGHT_SM)
+        layout_inv["yaxis"]["title"] = unit_label
+        fig_inv.update_layout(**layout_inv)
+        st.plotly_chart(fig_inv, use_container_width=True)
+    else:
+        st.info("재고 데이터 없음")
+
+
+# ── 사이드바 네비게이션 ────────────────────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown("## 📊 Macro Dash")
+    st.divider()
+
+    markets_sig = tab_signal(["FEDFUNDS", "GS10", "10Y2Y_SPREAD", "DX-Y.NYB"])
+    macro_sig   = tab_signal(["CPIAUCSL", "UNRATE"])
+    korea_sig   = tab_signal(["KRW=X", "CL=F"])
+    semi_sig    = tab_signal(["^SOX", "^KS11"])
+
+    page = st.radio(
+        label="",
+        options=[
+            "Overview",
+            f"Macro Economy {macro_sig}",
+            f"Markets {markets_sig}",
+            f"한국·원자재 {korea_sig}",
+            f"반도체·주식 {semi_sig}",
+            "실적 트래커",
+        ],
+        label_visibility="collapsed",
+    )
+
+    st.divider()
+    st.caption(f"마지막 수집: {get_last_collected()}")
+    st.caption("Sources: FRED, ECOS, Yahoo Finance")
+
+
+# ── 페이지 라우팅 ─────────────────────────────────────────────────────────────
+
+if page.startswith("Overview"):
+    show_overview()
+elif page.startswith("Macro Economy"):
+    show_macro()
+elif page.startswith("Markets"):
+    show_markets()
+elif page.startswith("한국·원자재"):
+    show_korea()
+elif page.startswith("반도체·주식"):
+    show_semiconductor()
+else:
+    show_earnings()

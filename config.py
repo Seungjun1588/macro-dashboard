@@ -35,6 +35,32 @@ YFINANCE_INDICATORS = {
     "NVDA":     {"name": "엔비디아", "category": "반도체/주식", "unit": "USD"},
 }
 
+TICKER_COLORS = {
+    "FEDFUNDS":     "#E63946",
+    "GS10":         "#457B9D",
+    "GS2":          "#F4A261",
+    "10Y2Y_SPREAD": "#2A9D8F",
+    "DX-Y.NYB":     "#6A4C93",
+    "CPIAUCSL":     "#4A9EFF",
+    "PCEPI":        "#E63946",
+    "UNRATE":       "#F59E0B",
+    "UMCSENT":      "#2A9D8F",
+    "KRW=X":        "#E76F51",
+    "CL=F":         "#F4A261",
+    "GC=F":         "#FFD700",
+    "722Y001":      "#457B9D",
+    "901Y009":      "#E76F51",
+    "403Y001":      "#34D399",
+    "^SOX":         "#264653",
+    "NVDA":         "#76C442",
+    "005930.KS":    "#1428A0",
+    "000660.KS":    "#EA0029",
+    "^GSPC":        "#4A9EFF",
+    "^IXIC":        "#A78BFA",
+    "^KS11":        "#34D399",
+    "^KQ11":        "#FBBF24",
+}
+
 # 장단기 금리차는 수집 후 자체 계산
 SPREAD_INDICATOR = {
     "10Y2Y_SPREAD": {"name": "장단기 금리차(10Y-2Y)", "category": "글로벌 금융", "unit": "%"}
