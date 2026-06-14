@@ -1,0 +1,19 @@
+# 민감 정보
+.env
+plan.md
+
+# DB
+db/macro.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
