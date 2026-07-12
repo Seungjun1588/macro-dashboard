@@ -32,6 +32,27 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python scheduler.py
 
+      - name: Set up Node.js (for Claude Code CLI)
+        if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run data-validator agent
+        if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude -p "오늘 수집된 데이터를 점검해줘" \
+            --agent data-validator \
+            --permission-mode bypassPermissions \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - name: Commit and push DB
         run: |
           git config user.name "github-actions[bot]"
