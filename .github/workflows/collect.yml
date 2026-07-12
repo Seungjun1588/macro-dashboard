@@ -32,6 +32,10 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python scheduler.py
 
+      - name: Data health check (deterministic script)
+        run: |
+          python scripts/macro_health_check.py | tee health_report.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Set up Node.js (for Claude Code CLI)
         if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         uses: actions/setup-node@v4
@@ -42,14 +46,14 @@ jobs:
         if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: Run data-validator agent
+      - name: Narrate health report
         if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          claude -p "오늘 수집된 데이터를 점검해줘" \
-            --agent data-validator \
+          claude -p "health_report.md 파일을 읽고 보기 좋게 다듬어 요약해줘" \
+            --agent health-report-narrator \
             --permission-mode bypassPermissions \
             >> "$GITHUB_STEP_SUMMARY"
 

@@ -2,6 +2,9 @@
 .env
 plans/
 
+# 헬스체크 스크립트의 임시 산출물 (CI/로컬 실행 시 생성)
+health_report.md
+
 # DB는 GitHub Actions가 커밋하므로 추적 대상 유지
 # db/macro.db
 
