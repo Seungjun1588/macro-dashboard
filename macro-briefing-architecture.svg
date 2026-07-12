@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="800" viewBox="0 0 900 800" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="8" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrGreen" markerWidth="9" markerHeight="9" refX="8" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#22c55e"/>
+    </marker>
+    <marker id="arrBlue" markerWidth="9" markerHeight="9" refX="8" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#0ea5e9"/>
+    </marker>
+    <marker id="arrRed" markerWidth="9" markerHeight="9" refX="8" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#f87171"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="800" fill="#f8fafc" rx="12"/>
+
+  <!-- Title -->
+  <text x="450" y="34" text-anchor="middle" font-size="19" font-weight="bold" fill="#1e293b">일일 매크로 브리핑 — 멀티에이전트 아키텍처 (macro-briefing 스킬)</text>
+
+  <!-- ══════════════ LAYER BACKGROUND BOXES ══════════════ -->
+
+  <rect x="60" y="48" width="780" height="110" rx="10" fill="#F5F3FF" stroke="#DDD6FE" stroke-width="1.2"/>
+  <text x="72" y="62" font-size="11" font-weight="bold" fill="#7C3AED">요청 → 오케스트레이터</text>
+
+  <rect x="60" y="168" width="780" height="110" rx="10" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.2"/>
+  <text x="72" y="182" font-size="11" font-weight="bold" fill="#16A34A">데이터 확보 (Bash 직접 실행 — 결정적 스크립트)</text>
+
+  <rect x="60" y="283" width="780" height="140" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.2"/>
+  <text x="72" y="297" font-size="11" font-weight="bold" fill="#3B82F6">리서치 (NOTABLE 티커마다 병렬 호출)</text>
+
+  <rect x="60" y="428" width="780" height="175" rx="10" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.2"/>
+  <text x="72" y="442" font-size="11" font-weight="bold" fill="#64748B">작성 · 검수 (생성-비평 피드백 루프)</text>
+
+  <rect x="60" y="608" width="780" height="100" rx="10" fill="#FDF2F8" stroke="#F9A8D4" stroke-width="1.2"/>
+  <text x="72" y="622" font-size="11" font-weight="bold" fill="#EC4899">저장</text>
+
+  <!-- ══════════════ LAYER 1: 요청 → 오케스트레이터 ══════════════ -->
+
+  <rect x="90" y="68" width="150" height="70" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="165" y="98" text-anchor="middle" font-size="13" font-weight="bold" fill="#334155">사용자</text>
+  <text x="165" y="117" text-anchor="middle" font-size="10" fill="#475569">"오늘 브리핑 써줘"</text>
+
+  <line x1="240" y1="103" x2="268" y2="103" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="270" y="68" width="480" height="70" rx="8" fill="#EDE9FE" stroke="#A78BFA" stroke-width="1.5"/>
+  <text x="510" y="98" text-anchor="middle" font-size="13" font-weight="bold" fill="#6D28D9">오케스트레이터 (메인 세션)</text>
+  <text x="510" y="117" text-anchor="middle" font-size="10" fill="#5B21B6">macro-briefing 스킬 실행 · Task/Agent 툴로 서브에이전트 호출</text>
+
+  <line x1="510" y1="138" x2="510" y2="183" stroke="#94a3b8" stroke-width="1.5"/>
+
+  <!-- ══════════════ LAYER 2: 데이터 확보 ══════════════ -->
+
+  <line x1="255" y1="183" x2="625" y2="183" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="255" y1="183" x2="255" y2="191" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="625" y1="183" x2="625" y2="191" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="90" y="193" width="330" height="64" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="255" y="215" text-anchor="middle" font-size="12" font-weight="bold" fill="#15803d">macro_health_check.py</text>
+  <text x="255" y="233" text-anchor="middle" font-size="10" fill="#166534">STALE / NEVER_COLLECTED 판정</text>
+  <text x="255" y="248" text-anchor="middle" font-size="9" fill="#166534">(macro-health-check 스킬)</text>
+
+  <rect x="460" y="193" width="330" height="64" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="625" y="215" text-anchor="middle" font-size="12" font-weight="bold" fill="#15803d">latest_snapshot.py</text>
+  <text x="625" y="233" text-anchor="middle" font-size="10" fill="#166534">최신값 · 변화율 · NOTABLE 판정</text>
+  <text x="625" y="248" text-anchor="middle" font-size="9" fill="#166534">(macro-latest-snapshot 스킬)</text>
+
+  <!-- snapshot -> 리서치 레이어 (병렬 트리거) -->
+  <line x1="625" y1="257" x2="625" y2="303" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arrBlue)"/>
+  <text x="700" y="273" text-anchor="middle" font-size="9" fill="#0369a1">NOTABLE마다 병렬 호출</text>
+
+  <!-- 원본 데이터 bypass -> writer (우회 경로, 원본 그대로 전달) -->
+  <polyline points="90,230 42,230 42,463 98,463" fill="none" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <text x="28" y="380" text-anchor="middle" font-size="9" fill="#64748b" transform="rotate(-90 28 380)">(+ 헬스체크·스냅샷 원본 동봉)</text>
+
+  <!-- ══════════════ LAYER 3: 리서치 (병렬) ══════════════ -->
+
+  <rect x="90" y="308" width="210" height="64" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="195" y="330" text-anchor="middle" font-size="12" font-weight="bold" fill="#1d4ed8">macro-researcher #1</text>
+  <text x="195" y="348" text-anchor="middle" font-size="10" fill="#1e40af">Tools: WebSearch, WebFetch</text>
+  <text x="195" y="363" text-anchor="middle" font-size="9" fill="#1e40af">예: GS2, 10Y2Y_SPREAD</text>
+
+  <rect x="335" y="308" width="210" height="64" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="440" y="330" text-anchor="middle" font-size="12" font-weight="bold" fill="#1d4ed8">macro-researcher #2</text>
+  <text x="440" y="348" text-anchor="middle" font-size="10" fill="#1e40af">Tools: WebSearch, WebFetch</text>
+  <text x="440" y="363" text-anchor="middle" font-size="9" fill="#1e40af">예: UNRATE, UMCSENT</text>
+
+  <rect x="580" y="308" width="200" height="64" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="7,3"/>
+  <text x="680" y="330" text-anchor="middle" font-size="12" font-weight="bold" fill="#1d4ed8">macro-researcher #N</text>
+  <text x="680" y="348" text-anchor="middle" font-size="10" fill="#1e40af">Tools: WebSearch, WebFetch</text>
+  <text x="680" y="363" text-anchor="middle" font-size="9" fill="#1e40af">NOTABLE 개수만큼 반복</text>
+
+  <text x="450" y="405" text-anchor="middle" font-size="9" fill="#475569" font-style="italic">※ NOTABLE 티커 하나당 독립 컨텍스트로 병렬 실행 (실제 테스트: 7개 동시 호출)</text>
+
+  <!-- researchers -> writer -->
+  <line x1="195" y1="372" x2="255" y2="451" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="440" y1="372" x2="255" y2="451" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="680" y1="372" x2="255" y2="451" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arr)"/>
+  <text x="330" y="393" text-anchor="middle" font-size="9" fill="#64748b">리서치 요약</text>
+
+  <!-- ══════════════ LAYER 4: 작성 · 검수 ══════════════ -->
+
+  <rect x="100" y="453" width="310" height="70" rx="8" fill="#fef9c3" stroke="#eab308" stroke-width="1.5"/>
+  <text x="255" y="478" text-anchor="middle" font-size="13" font-weight="bold" fill="#854d0e">macro-writer</text>
+  <text x="255" y="496" text-anchor="middle" font-size="10" fill="#78350f">Tools: Read, Grep, Glob</text>
+  <text x="255" y="511" text-anchor="middle" font-size="9" fill="#78350f">카테고리별 초안 작성 (파일 안 씀)</text>
+
+  <rect x="470" y="453" width="310" height="70" rx="8" fill="#fef2f2" stroke="#f87171" stroke-width="1.5"/>
+  <text x="625" y="478" text-anchor="middle" font-size="13" font-weight="bold" fill="#b91c1c">macro-critic</text>
+  <text x="625" y="496" text-anchor="middle" font-size="10" fill="#991b1b">Tools: Read</text>
+  <text x="625" y="511" text-anchor="middle" font-size="9" fill="#991b1b">숫자 · 근거 · 신뢰도 경고 대조 검수</text>
+
+  <line x1="410" y1="488" x2="468" y2="488" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="439" y="480" text-anchor="middle" font-size="9" fill="#64748b">초안 전달</text>
+
+  <path d="M 625,451 C 625,425 255,425 255,451" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrRed)"/>
+  <text x="440" y="422" text-anchor="middle" font-size="9" fill="#b91c1c">반려 — 최대 2회 재작성 요청</text>
+
+  <line x1="625" y1="523" x2="625" y2="553" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrGreen)"/>
+  <text x="655" y="540" text-anchor="middle" font-size="10" fill="#16a34a">승인</text>
+
+  <!-- ══════════════ LAYER 5: 저장 ══════════════ -->
+
+  <rect x="180" y="633" width="300" height="60" rx="8" fill="#fce7f3" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="330" y="658" text-anchor="middle" font-size="13" font-weight="bold" fill="#be185d">reports/YYYY-MM-DD.md</text>
+  <text x="330" y="676" text-anchor="middle" font-size="10" fill="#9d174d">오케스트레이터가 Write 툴로 저장</text>
+
+  <text x="330" y="705" text-anchor="middle" font-size="10" fill="#475569">→ 저장 경로를 사용자에게 안내</text>
+
+  <!-- ══════════════ LEGEND ══════════════ -->
+  <rect x="620" y="628" width="205" height="72" rx="6" fill="white" stroke="#e2e8f0" stroke-width="1.2"/>
+  <text x="722" y="642" text-anchor="middle" font-size="10" font-weight="bold" fill="#334155">범 례</text>
+
+  <line x1="630" y1="652" x2="654" y2="652" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="661" y="655" font-size="9" fill="#334155">데이터/컨텍스트 전달</text>
+
+  <line x1="630" y1="664" x2="654" y2="664" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arrBlue)"/>
+  <text x="661" y="667" font-size="9" fill="#334155">병렬 호출 트리거</text>
+
+  <line x1="630" y1="676" x2="654" y2="676" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrGreen)"/>
+  <text x="661" y="679" font-size="9" fill="#334155">승인</text>
+
+  <line x1="630" y1="688" x2="654" y2="688" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrRed)"/>
+  <text x="661" y="691" font-size="9" fill="#334155">반려 (재작성 요청)</text>
+
+</svg>
