@@ -543,6 +543,51 @@ def mini_chart(ticker: str, title: str, limit: int = 180) -> go.Figure:
     return fig
 
 
+def price_row(tickers: list[tuple], period: int):
+    """티커마다 독립된 y축으로 실제 가격을 그린다.
+
+    한 축에 모으면 못 읽는다 — SOX(index 만 단위)·NVDA(달러 세 자리)·
+    삼성(원 십만 단위)·하이닉스(원 백만 단위)가 섞여 있어 작은 쪽이
+    바닥에 깔린다. 쪼개면 정규화 없이 금액을 그대로 볼 수 있다.
+    """
+    cols = st.columns(len(tickers))
+    for col, (ticker, label, unit) in zip(cols, tickers):
+        df = load_history(ticker, limit=period)
+        if df.empty:
+            col.info(f"📡 {label} 데이터 없음")
+            continue
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df["date"], y=df["value"], mode="lines", name=label,
+            line=dict(width=1.8, color=TICKER_COLORS.get(ticker, "#4A9EFF")),
+        ))
+        layout = dark_layout(f"{label} · {fmt_value(df['value'].iloc[-1], unit)}", CHART_HEIGHT_MD)
+        layout["yaxis"]["title"] = unit
+        layout["margin"] = dict(l=0, r=0, t=40, b=0)
+        layout["showlegend"] = False
+        fig.update_layout(**layout)
+        col.plotly_chart(fig, use_container_width=True)
+
+
+def return_chart(tickers: list[tuple], period: int, title: str) -> go.Figure:
+    """조회 기간 시작일을 0%로 맞춘 상대 수익률 비교."""
+    fig = go.Figure()
+    for ticker, label, _unit in tickers:
+        df = load_history(ticker, period)
+        if df.empty:
+            continue
+        df = df.copy()
+        df["norm"] = (df["value"] / df["value"].iloc[0] - 1) * 100
+        fig.add_trace(go.Scatter(
+            x=df["date"], y=df["norm"], name=label,
+            line=dict(color=TICKER_COLORS.get(ticker, "#4A9EFF")),
+        ))
+    layout = dark_layout(title, CHART_HEIGHT_LG)
+    layout["yaxis"]["ticksuffix"] = "%"
+    fig.update_layout(**layout)
+    return fig
+
+
 def show_situation_messages(tab: str):
     spread_d = load_latest("10Y2Y_SPREAD")
     dxy_d    = load_latest("DX-Y.NYB")
@@ -885,54 +930,44 @@ def show_semiconductor():
 
     st.divider()
 
-    col_l, col_r = st.columns(2)
-    with col_l:
-        semi_tickers = [
-            ("^SOX",       "SOX"),
-            ("NVDA",       "NVDA"),
-            ("005930.KS",  "삼성전자"),
-            ("000660.KS",  "SK하이닉스"),
-        ]
-        fig = go.Figure()
-        for ticker, label in semi_tickers:
-            df = load_history(ticker, period)
-            if df.empty:
-                continue
-            base = df["value"].iloc[0]
-            df = df.copy()
-            df["norm"] = (df["value"] / base - 1) * 100
-            fig.add_trace(go.Scatter(
-                x=df["date"], y=df["norm"], name=label,
-                line=dict(color=TICKER_COLORS.get(ticker, "#4A9EFF")),
-            ))
-        layout = dark_layout("반도체 관련주 수익률 비교 (%)", CHART_HEIGHT_LG)
-        layout["yaxis"]["ticksuffix"] = "%"
-        fig.update_layout(**layout)
-        st.plotly_chart(fig, use_container_width=True)
+    semi_tickers = [
+        ("^SOX",       "SOX",        "index"),
+        ("NVDA",       "NVDA",       "USD"),
+        ("005930.KS",  "삼성전자",    "KRW"),
+        ("000660.KS",  "SK하이닉스",  "KRW"),
+    ]
+    idx_tickers = [
+        ("^GSPC", "S&P500", "index"),
+        ("^IXIC", "나스닥",  "index"),
+        ("^KS11", "코스피",  "index"),
+        ("^KQ11", "코스닥",  "index"),
+    ]
 
-    with col_r:
-        idx_tickers = [
-            ("^GSPC", "S&P500"),
-            ("^IXIC", "나스닥"),
-            ("^KS11", "코스피"),
-            ("^KQ11", "코스닥"),
-        ]
-        fig2 = go.Figure()
-        for ticker, label in idx_tickers:
-            df = load_history(ticker, period)
-            if df.empty:
-                continue
-            base = df["value"].iloc[0]
-            df = df.copy()
-            df["norm"] = (df["value"] / base - 1) * 100
-            fig2.add_trace(go.Scatter(
-                x=df["date"], y=df["norm"], name=label,
-                line=dict(color=TICKER_COLORS.get(ticker, "#4A9EFF")),
-            ))
-        layout2 = dark_layout("글로벌 지수 수익률 비교 (%)", CHART_HEIGHT_LG)
-        layout2["yaxis"]["ticksuffix"] = "%"
-        fig2.update_layout(**layout2)
-        st.plotly_chart(fig2, use_container_width=True)
+    mode = st.radio(
+        "표시 방식",
+        ["실제 가격", "수익률 비교(%)"],
+        horizontal=True,
+        key="semi_chart_mode",
+        label_visibility="collapsed",
+    )
+
+    st.subheader("반도체 관련주")
+    if mode == "실제 가격":
+        price_row(semi_tickers, period)
+    else:
+        st.plotly_chart(
+            return_chart(semi_tickers, period, "반도체 관련주 수익률 비교 (%)"),
+            use_container_width=True,
+        )
+
+    st.subheader("글로벌 지수")
+    if mode == "실제 가격":
+        price_row(idx_tickers, period)
+    else:
+        st.plotly_chart(
+            return_chart(idx_tickers, period, "글로벌 지수 수익률 비교 (%)"),
+            use_container_width=True,
+        )
 
     st.divider()
 
