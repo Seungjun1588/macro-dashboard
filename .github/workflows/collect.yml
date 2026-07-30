@@ -9,6 +9,10 @@ jobs:
   collect:
     runs-on: ubuntu-latest
 
+    # secrets 컨텍스트는 스텝의 if:에서 쓸 수 없어 잡 레벨 env로 한 번 받는다
+    env:
+      HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+
     steps:
       - name: Checkout repo (with DB)
         uses: actions/checkout@v4
@@ -37,17 +41,17 @@ jobs:
           python scripts/macro_health_check.py | tee health_report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node.js (for Claude Code CLI)
-        if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        if: env.HAS_ANTHROPIC_KEY == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install Claude Code CLI
-        if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        if: env.HAS_ANTHROPIC_KEY == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Narrate health report
-        if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        if: env.HAS_ANTHROPIC_KEY == 'true'
         continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
