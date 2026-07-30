@@ -13,8 +13,18 @@ from config import (
     SPREAD_INDICATOR,
 )
 
-MONTHLY_STALE_DAYS = 45
+# 월간 시계열은 관측치가 그 달 1일자로 찍히고 다음 달 초에 발표된다.
+# 즉 정상 상태에서도 월말이면 60일 가까이 벌어진다 — 45일은 상시 오탐이었다.
+# 70일이면 발표 지연은 통과시키고 한 달을 통째로 놓친 경우(~90일)는 잡는다.
+MONTHLY_STALE_DAYS = 70
 DAILY_STALE_DAYS = 7
+
+# 같은 날 FRED에 함께 요청해도 CPI·실업률은 6월치가 오는데 이 둘은 5월치가
+# 최신이다 — 누락이 아니라 발표가 한 달 더 느린 계열이라 따로 잡아준다.
+SLOW_MONTHLY_STALE_DAYS = {
+    "PCEPI": 100,
+    "UMCSENT": 100,
+}
 
 
 def _expected_tickers():
@@ -51,7 +61,8 @@ def check():
 
         last = datetime.strptime(last_date[:10], "%Y-%m-%d").date()
         days_since = (today - last).days
-        threshold = MONTHLY_STALE_DAYS if meta["freq"] == "M" else DAILY_STALE_DAYS
+        default = MONTHLY_STALE_DAYS if meta["freq"] == "M" else DAILY_STALE_DAYS
+        threshold = SLOW_MONTHLY_STALE_DAYS.get(ticker, default)
 
         if days_since > threshold:
             stale.append((ticker, meta, last, days_since))
@@ -88,4 +99,15 @@ def render(today, never_collected, stale, ok_count, total):
 
 
 if __name__ == "__main__":
-    print(render(*check()))
+    # 기본은 항상 0으로 끝난다 — 스킬·에이전트가 리포트를 읽으려고 호출하는데
+    # 종료 코드로 실패를 알리면 그쪽이 깨진다. CI만 --strict로 게이트를 건다.
+    today, never_collected, stale, ok_count, total = check()
+    print(render(today, never_collected, stale, ok_count, total))
+
+    if "--strict" in sys.argv and (never_collected or stale):
+        print(
+            f"[STRICT] 문제 {len(never_collected) + len(stale)}건 — "
+            f"NEVER_COLLECTED {len(never_collected)}, STALE {len(stale)}",
+            file=sys.stderr,
+        )
+        sys.exit(1)

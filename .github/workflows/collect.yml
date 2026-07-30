@@ -28,7 +28,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # 여기서 바로 죽으면 부분 수집분마저 커밋되지 않는다.
+      # 판정은 마지막 게이트 스텝으로 미루고, 결과만 기록해둔다.
       - name: Run collector
+        id: collect
+        continue-on-error: true
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
@@ -68,3 +72,15 @@ jobs:
           git add db/macro.db
           git diff --staged --quiet || git commit -m "data: daily collect $(date +%Y-%m-%d)"
           git push
+
+      # 데이터가 저장된 뒤에 판정한다. 수집이 조용히 실패해도 런은 초록이던
+      # 문제를 여기서 끊는다 — 빨간 런이 곧 알림이다.
+      - name: Fail run on collection problems
+        run: |
+          FAILED=""
+          if [ "${{ steps.collect.outcome }}" != "success" ]; then
+            echo "::error::수집 스텝 실패 — 소스 전멸 또는 예외 발생"
+            FAILED=1
+          fi
+          python scripts/macro_health_check.py --strict || FAILED=1
+          [ -z "$FAILED" ] || exit 1

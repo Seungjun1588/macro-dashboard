@@ -84,7 +84,11 @@ python scripts/macro_health_check.py    # 수집 누락·지연 감지
 python scripts/latest_snapshot.py       # 최신값 + 변화율 스냅샷 (NOTABLE 표시)
 ```
 
-헬스체크 기준: 월간 지표 45일, 일간 지표 7일 초과 시 `STALE`로 판정합니다.
+헬스체크 기준: 월간 지표 70일, 일간 지표 7일 초과 시 `STALE`로 판정합니다
+(`PCEPI`·`UMCSENT`는 발표가 한 달 더 느려 100일 적용).
+
+`--strict`를 붙이면 문제가 있을 때 종료 코드 1로 끝납니다. CI가 런을 실패시키는 데 쓰며,
+기본 실행은 리포트 출력이 목적이라 항상 0으로 끝납니다.
 
 ---
 

@@ -8,7 +8,7 @@ description: macro-dashboard의 db/macro.db 수집 상태를 점검합니다 (�
 `scripts/macro_health_check.py`는 `config.py`에 정의된 전체 기대 티커 목록(FRED/ECOS/yfinance/장단기금리차)과 `db/macro.db`를 대조해, 다음 두 가지 "조용한 실패"를 찾아냅니다:
 
 - **NEVER_COLLECTED**: 설정된 티커인데 DB에 행이 하나도 없음 (API 코드 오타, item_code 오류 등 구조적 문제 가능성 — 가장 심각)
-- **STALE**: 행은 있지만 마지막 수집일이 기준(월별 지표 45일, 일별/거래일 지표 7일)보다 오래됨
+- **STALE**: 행은 있지만 마지막 관측일이 기준(월별 지표 70일, 일별/거래일 지표 7일)보다 오래됨. `PCEPI`·`UMCSENT`는 발표가 한 달 더 느린 계열이라 100일을 적용합니다.
 
 이 두 상태는 `utils/validator.py`가 값을 걸러낸 경우와 API가 0건을 반환한 경우 모두 동일하게 나타나는 증상이라, 원인을 구분하지 않고 증상만으로 감지합니다.
 
@@ -19,6 +19,8 @@ description: macro-dashboard의 db/macro.db 수집 상태를 점검합니다 (�
 python scripts/macro_health_check.py
 ```
 저장소 루트에서 실행해야 합니다 (`config.py`, `db/macro.db`를 상대 경로로 참조).
+
+이 형태는 문제가 있어도 **항상 종료 코드 0**으로 끝납니다 — 리포트를 읽는 게 목적이기 때문입니다. `--strict`를 붙이면 문제가 있을 때 1로 끝나는데, 이건 CI가 런을 실패시키는 용도이므로 이 스킬에서는 쓰지 마세요.
 
 **이미 결과 파일이 있을 때** (예: CI에서 `scripts/macro_health_check.py > health_report.md`로 미리 생성해둔 경우): 스크립트를 다시 실행하지 말고 그 파일을 그대로 Read해서 해석하세요.
 

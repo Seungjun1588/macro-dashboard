@@ -47,14 +47,15 @@ def collect(lookback_months: int = 36):
     start_dt = end_dt - timedelta(days=lookback_months * 30)
     start = start_dt.strftime("%Y%m")
     end = end_dt.strftime("%Y%m")
-    results = {}
+    # 실패한 티커도 0으로 남긴다 — 호출자가 '전멸'을 판정할 수 있어야 한다
+    results = {stat_code: 0 for stat_code in ECOS_INDICATORS}
 
     for stat_code, meta in ECOS_INDICATORS.items():
         try:
             records = _fetch(stat_code, meta["item_code"], meta["freq"], start, end)
             if not records:
+                send_error(f"ECOS 0건 응답: {stat_code}", f"{start}~{end} 구간 데이터 없음 (item_code 확인 필요)")
                 print(f"  [ECOS] {stat_code}: 데이터 없음 (item_code 확인 필요)")
-                results[stat_code] = 0
                 continue
             saved = upsert(stat_code, meta["name"], meta["category"], meta["unit"], records)
             results[stat_code] = saved
