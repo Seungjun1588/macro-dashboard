@@ -77,9 +77,14 @@ CHART_HEIGHT_LG = 400
 
 @st.cache_data(ttl=3600)
 def load_history(ticker: str, limit: int = 365) -> pd.DataFrame:
+    # 최신 limit건을 고른 뒤 오름차순으로 되돌린다. 바깥에서 바로 ASC로
+    # 자르면 가장 오래된 구간이 잡혀서, 조회 기간을 좁힐수록 옛날 데이터가
+    # 나온다 — "1개월"이 작년 7월을 그리고 있었다.
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(
-        "SELECT date, value FROM indicators WHERE ticker=? ORDER BY date ASC LIMIT ?",
+        """SELECT date, value FROM (
+               SELECT date, value FROM indicators WHERE ticker=? ORDER BY date DESC LIMIT ?
+           ) ORDER BY date ASC""",
         conn, params=(ticker, limit),
     )
     conn.close()
@@ -1135,6 +1140,13 @@ with st.sidebar:
     st.divider()
     st.caption(f"마지막 수집: {get_last_collected()}")
     st.caption("Sources: FRED, ECOS, Yahoo Finance")
+
+    # 조회 결과는 1시간 캐시된다. 수집기가 DB를 갱신해도 앱은 한동안
+    # 옛 값을 그리는데, 기본 메뉴의 Clear cache는 위 CSS로 숨겨져 있어
+    # 재시작 말고는 비울 방법이 없다.
+    if st.button("데이터 새로고침", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 
 # ── 페이지 라우팅 ─────────────────────────────────────────────────────────────
