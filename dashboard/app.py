@@ -526,7 +526,7 @@ def line_chart(ticker: str, title: str, unit: str, limit: int = 365) -> go.Figur
         x=df["date"], y=df["value"], mode="lines", name=title,
         line=dict(width=2, color=TICKER_COLORS.get(ticker, "#4A9EFF")),
     ))
-    layout = dark_layout(title, CHART_HEIGHT_MD)
+    layout = dark_layout(f"{title} · 기준일 {df['date'].iloc[-1]:%Y-%m-%d}", CHART_HEIGHT_MD)
     layout["yaxis"]["title"] = unit
     fig.update_layout(**layout)
     return fig
@@ -541,7 +541,7 @@ def mini_chart(ticker: str, title: str, limit: int = 180) -> go.Figure:
         x=df["date"], y=df["value"], mode="lines", name=title,
         line=dict(width=1.5, color=TICKER_COLORS.get(ticker, "#4A9EFF")),
     ))
-    layout = dark_layout(title, 200)
+    layout = dark_layout(f"{title} · {df['date'].iloc[-1]:%Y-%m-%d}", 200)
     layout["xaxis"]["showticklabels"] = False
     layout["margin"] = dict(l=0, r=0, t=30, b=0)
     fig.update_layout(**layout)
@@ -566,9 +566,13 @@ def price_row(tickers: list[tuple], period: int):
             x=df["date"], y=df["value"], mode="lines", name=label,
             line=dict(width=1.8, color=TICKER_COLORS.get(ticker, "#4A9EFF")),
         ))
-        layout = dark_layout(f"{label} · {fmt_value(df['value'].iloc[-1], unit)}", CHART_HEIGHT_MD)
+        title = (
+            f"{label} · {fmt_value(df['value'].iloc[-1], unit)}"
+            f"<br><sub>기준일 {df['date'].iloc[-1]:%Y-%m-%d}</sub>"
+        )
+        layout = dark_layout(title, CHART_HEIGHT_MD)
         layout["yaxis"]["title"] = unit
-        layout["margin"] = dict(l=0, r=0, t=40, b=0)
+        layout["margin"] = dict(l=0, r=0, t=54, b=0)
         layout["showlegend"] = False
         fig.update_layout(**layout)
         col.plotly_chart(fig, use_container_width=True)
@@ -635,6 +639,33 @@ ALL_TICKERS = [
     ("005930.KS", "삼성전자"), ("000660.KS", "SK하이닉스"),
     ("^GSPC", "S&P500"), ("^IXIC", "나스닥"), ("^KS11", "코스피"), ("^KQ11", "코스닥"),
 ]
+
+TICKER_LABELS = dict(ALL_TICKERS)
+
+
+def asof_footer(tickers: list[str]):
+    """페이지에 쓰인 지표들의 최신 관측일을 하단에 모은다.
+
+    주기가 섞여 있어 기준일이 지표마다 한 달 넘게 벌어진다(일간 시세는
+    어제, 월간 통계는 지난달, PCE는 두 달 전). 여러 지표를 겹쳐 그리는
+    차트는 제목에 날짜를 넣을 수 없으니 여기서 한꺼번에 밝힌다.
+    """
+    today = pd.Timestamp.today().normalize()
+    rows = []
+    for ticker in tickers:
+        label = TICKER_LABELS.get(ticker, ticker)
+        latest = load_latest(ticker)
+        if latest is None:
+            rows.append({"지표": label, "기준일": "-", "경과": "데이터 없음"})
+            continue
+        age = (today - pd.to_datetime(latest["date"])).days
+        rows.append({"지표": label, "기준일": latest["date"], "경과": f"{age}일 전"})
+
+    dates = [r["기준일"] for r in rows if r["기준일"] != "-"]
+    st.divider()
+    summary = f"{min(dates)} ~ {max(dates)}" if dates else "데이터 없음"
+    with st.expander(f"데이터 기준일: {summary}", expanded=False):
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 # ── 페이지 함수 ───────────────────────────────────────────────────────────────
@@ -747,6 +778,8 @@ def show_overview():
     )
     st.plotly_chart(fig_heat, use_container_width=True)
 
+    asof_footer([ticker for ticker, _ in ALL_TICKERS])
+
 
 def show_markets():
     page_header("Markets", "미국 국채 금리 · 장단기 스프레드 · 달러 인덱스")
@@ -789,6 +822,8 @@ def show_markets():
             st.info("📡 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
         else:
             st.plotly_chart(line_chart("DX-Y.NYB", "달러 인덱스 (DXY)", "index", limit=period), use_container_width=True)
+
+    asof_footer(["FEDFUNDS", "GS10", "GS2", "10Y2Y_SPREAD", "DX-Y.NYB"])
 
 
 def show_macro():
@@ -841,6 +876,8 @@ def show_macro():
                 st.info("📡 UMCSENT 데이터 없음")
             else:
                 st.plotly_chart(line_chart("UMCSENT", "소비자심리지수", "index", limit=period), use_container_width=True)
+
+    asof_footer(["CPIAUCSL", "PCEPI", "UNRATE", "UMCSENT"])
 
 
 def show_korea():
@@ -914,6 +951,8 @@ def show_korea():
             layout2["margin"]         = dict(l=0, r=50, t=40, b=0)
             fig2.update_layout(**layout2)
             st.plotly_chart(fig2, use_container_width=True)
+
+    asof_footer(["KRW=X", "722Y001", "901Y009", "403Y001", "CL=F", "GC=F"])
 
 
 def show_semiconductor():
@@ -1006,6 +1045,8 @@ def show_semiconductor():
         st.plotly_chart(fig_h, use_container_width=True)
     else:
         st.info("📡 주식 데이터를 불러오는 중이거나 수집되지 않은 지표입니다.")
+
+    asof_footer([ticker for ticker, _, _ in semi_tickers + idx_tickers])
 
 
 def show_earnings():
